@@ -83,13 +83,5 @@ async def on_member_join(member):
     text = f"ยินดีต้อนรับสู่ ปาร์ตี้วังหลวง, {member.mention} ! ไทเฮาหอมกำลังรอ {member.mention} อยู่"
     await  channel.send(text)
 
-def main():
-    
-    try:
-        server_on()
-        bot.run(os.getenv("TOKEN"))
-    except Exception as e:
-        print(f"❌ ไม่สามารถรันบอทได้: {e}")
-
-if __name__ == "__main__":
-    main()
+server_on()
+bot.run(os.getenv("TOKEN"))
