@@ -5,27 +5,23 @@ import os
 from MSV import server_on
 import feedparser
 import asyncio
-from datetime import datetime, time, timedelta 
+from datetime import datetime, time
 import pytz
 import logging
 import re
+
 # ตั้งค่า logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# กำหนดโซนเวลาไทย (ป้องกันปัญหาเวลา Server ไม่ตรงกับไทย)
 tz = pytz.timezone('Asia/Bangkok')
 
-# 1. กำหนดเวลาที่ต้องการส่งข่าว (6 โมงเช้า และ 4 โมงเย็น)
+# 1. กำหนดเวลาส่งข่าว
 times = [
     time(hour=6, minute=0, tzinfo=tz),
     time(hour=16, minute=0, tzinfo=tz)
 ]
- 
-# ตั้งค่า Discord Bot
+
 intents = discord.Intents.default()
 intents.members = True 
 intents.message_content = True 
@@ -33,232 +29,146 @@ bot = commands.Bot(command_prefix="/", intents=intents)
 
 CHANNEL_New = int(os.getenv("CHANNEL_New", 0))
 CHANNEL_W = int(os.getenv("CHANNEL_W", 0))
-#=========ข่าว============
-# แหล่งข่าว
+
 NEWS_SOURCES = [
-    {
-        "url": "https://www.thairath.co.th/rss/news",
-        "name": "thairath"
-    },
-    {
-        "url": "https://www.techtalkthai.com/feed/",
-        "name": "TechTalkThai"
-    },
-    {
-        "url": "https://www.matichon.co.th/feed",
-        "name": "มติชน"
-    },
-    {
-        "url": "https://www.bbc.com/thai/index.xml",
-        "name": "BBC"
-    },
+    {"url": "https://www.thairath.co.th/rss/news", "name": "Thairath"},
+    {"url": "https://www.techtalkthai.com/feed/", "name": "TechTalkThai"},
+    {"url": "https://www.matichon.co.th/feed", "name": "มติชน"},
+    {"url": "https://www.bbc.com/thai/index.xml", "name": "BBC Thai"},
 ]
-# ตัวแปรเก็บข่าวที่ส่งไปแล้ว
+
 sent_articles = set()
+
 async def fetch_news(max_articles=5):
-    """ดึงข่าวจากแหล่งข้อมูลต่างๆ"""
     all_articles = []
-    
     for source in NEWS_SOURCES:
         try:
-            logger.info(f"📡 กำลังดึงข่าวจาก {source['name']}...")
             feed = feedparser.parse(source['url'])
-            
-            # ดึงบทความจากแหล่งนี้
             for entry in feed.entries:
+                # พยายามหา URL รูปภาพจาก feed
+                image_url = None
+                if 'media_content' in entry:
+                    image_url = entry.media_content[0]['url']
+                elif 'links' in entry:
+                    for link in entry.links:
+                        if 'image' in link.get('type', ''):
+                            image_url = link.href
+                
                 article = {
                     'title': entry.get('title', 'ไม่มีหัวข้อ'),
                     'link': entry.get('link', ''),
-                    'summary': entry.get('summary', 'ไม่มีสรุป'),
+                    'summary': entry.get('summary', 'ไม่มีรายละเอียด'),
                     'source': source['name'],
-                    'published': entry.get('published', datetime.now().isoformat()),
+                    'image': image_url
                 }
                 
-                # ตรวจสอบว่ามี link และไม่ได้ส่งไปแล้ว
                 if article['link'] and article['link'] not in sent_articles:
                     all_articles.append(article)
-                
         except Exception as e:
-            logger.error(f"❌ เกิดข้อผิดพลาดในการดึงข่าวจาก {source['name']}: {e}")
+            logger.error(f"❌ Error fetching from {source['name']}: {e}")
     
-    # จัดเรียงและเลือก 5 อันดับแรก
-    all_articles = all_articles[:max_articles]
-    logger.info(f"✅ พบข่าวใหม่ {len(all_articles)} เรื่อง")
-    
-    return all_articles
- 
+    return all_articles[:max_articles]
+
 async def send_news_to_discord(articles):
-    """ส่งข่าวไปยัง Discord Channel"""
-    try:
-        channel = bot.get_channel(CHANNEL_New)
-        
-        if channel is None:
-            logger.error(f"❌ ไม่พบ Channel ID: {CHANNEL_New}")
-            return False
-        
-        if not articles:
-            logger.info("ℹ️ ไม่มีข่าวใหม่ที่ต้องส่ง")
-            return False
-        
-        # สร้าง Embed สำหรับข่าวแต่ละเรื่อง
-        embeds = []
-        
-        for i, article in enumerate(articles, 1):
-            # ทำให้ title มีความยาวเหมาะสม
-            title = article['title'][:250]
-            
-            # ทำให้ summary มีความยาวเหมาะสม
-            summary = article['summary']
-            if len(summary) > 400:
-                summary = summary[:397] + "..."
-            
-            # ลบแท็ก HTML ออก (ถ้ามี)
-            summary = re.sub(r'<[^>]+>', '', summary)
-            
-            embed = discord.Embed(
-                title=f"📰 {title}",
-                url=article['link'],
-                description=summary,
-                color=discord.Color.blue(),
-                timestamp=datetime.now()
-            )
-            embed.set_footer(text=f"🏢 {article['source']}")
-            
-            embeds.append(embed)
-            sent_articles.add(article['link'])
-        
-        # ส่งข่าว (Discord มีขีดจำกัด 10 embeds ต่อ message)
-        chunks = [embeds[i:i+10] for i in range(0, len(embeds), 10)]
-        
-        for i, batch in enumerate(chunks):
-            if i == 0:
-                # ส่ง message ตัวแรกพร้อมชื่อเรื่อง
-                message_text = f"📰 **ข่าวประจำวัน {datetime.now().strftime('%d/%m/%Y')} เวลา %H : %M น.**"
-                await channel.send(message_text, embeds=batch)
-            else:
-                await channel.send(embeds=batch)
-        
-        logger.info(f"✅ ส่งข่าว {len(embeds)} เรื่องไปยัง Discord สำเร็จ")
-        return True
-            
-    except Exception as e:
-        logger.error(f"❌ เกิดข้อผิดพลาดในการส่งข่าวไปยัง Discord: {e}")
+    channel = bot.get_channel(CHANNEL_New)
+    if not channel or not articles:
         return False
- 
-@tasks.loop(time=times) 
+
+    embeds = []
+    for article in articles:
+        # ลบ HTML Tags ออกจาก Summary
+        clean_summary = re.sub(r'<[^>]+>', '', article['summary'])
+        if len(clean_summary) > 300:
+            clean_summary = clean_summary[:297] + "..."
+
+        embed = discord.Embed(
+            title=article['title'][:250],
+            url=article['link'],
+            description=clean_summary,
+            color=0x2b2d31, # สีเทาเข้มแบบ Discord สวยงาม
+            timestamp=datetime.now(tz)
+        )
+        embed.set_footer(text=f"ที่มา: {article['source']}")
+        if article['image']:
+            embed.set_image(url=article['image'])
+        
+        embeds.append(embed)
+        sent_articles.add(article['link'])
+
+    # ส่งทีละ 5 embeds เพื่อความสวยงามและไม่ยาวเกินไป
+    for i in range(0, len(embeds), 5):
+        batch = embeds[i:i+5]
+        header = f"📰 **สรุปข่าวรอบเวลา {datetime.now(tz).strftime('%H:%M')} น.**" if i == 0 else ""
+        await channel.send(content=header, embeds=batch)
+    return True
+
+@tasks.loop(time=times)
 async def send_daily_news():
-    """ส่งข่าวตามเวลาที่กำหนด (06:00 และ 16:00)"""
-    try:
-        now = datetime.now(tz)
-        logger.info(f"⏰ ถึงเวลาส่งข่าวแล้ว ({now.strftime('%H:%M')}) กำลังดึงข่าว...")
-        
-        articles = await fetch_news(max_articles=5)
-        
-        if articles:
-            success = await send_news_to_discord(articles)
-            if success:
-                logger.info(f"✅ ส่งข่าวรอบ {now.hour}:00 สำเร็จ")
-        else:
-            logger.info("ℹ️ ไม่มีข่าวใหม่ในช่วงเวลานี้")
-            
-    except Exception as e:
-        logger.error(f"❌ เกิดข้อผิดพลาดใน Task ส่งข่าว: {e}")
- 
-# ============ UI COMPONENTS ============
+    articles = await fetch_news(5)
+    if articles:
+        await send_news_to_discord(articles)
+
+# ============ UI: RECRUIT SYSTEM ============
 class RecruitView(discord.ui.View):
     def __init__(self, target_count, author):
         super().__init__(timeout=None)
         self.target_count = target_count
-        self.participants = [] # เก็บเป็น List ของ User Objects
+        self.participants = []
         self.author = author
 
-    @discord.ui.button(label="⚔️ เข้าร่วมกองกำลัง", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="⚔️ เข้าร่วมกองกำลัง", style=discord.ButtonStyle.green, custom_id="join_battle")
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ตรวจสอบว่าซ้ำไหม
         if interaction.user.id in [p.id for p in self.participants]:
-            await interaction.response.send_message("ท่านได้เข้าร่วมกองกำลังนี้อยู่แล้ว!", ephemeral=True)
-            return
+            return await interaction.response.send_message("ท่านอยู่ในกองกำลังแล้ว!", ephemeral=True)
 
-        # เพิ่มผู้เข้าร่วม
         self.participants.append(interaction.user)
-        current_count = len(self.participants)
-        
-        # ✅ สร้างรายชื่อแบบ Mention (@username)
-        names = "\n".join([f"{idx+1}. {p.mention}" for idx, p in enumerate(self.participants)])
-        
+        count = len(self.participants)
+        mentions = "\n".join([f"{i+1}. {p.mention}" for i, p in enumerate(self.participants)])
+
         embed = discord.Embed(
             title="⚔️ การระดมพลอัศวิน",
-            description=f"แม่ทัพ **{self.author.mention}** ต้องการกำลังพล: **{self.target_count}** นาย\n\n**รายชื่อผู้ตอบรับ:**\n{names}",
-            color=discord.Color.red()
+            description=f"แม่ทัพ {self.author.mention} ต้องการ: **{self.target_count}** นาย\n\n**รายชื่อ:**\n{mentions}",
+            color=discord.Color.brand_green() if count >= self.target_count else discord.Color.gold()
         )
-        embed.set_footer(text=f"ความคืบหน้า: {current_count}/{self.target_count}")
 
-        if current_count >= self.target_count:
-            # เมื่อครบจำนวน: ปิดปุ่ม
+        if count >= self.target_count:
             button.disabled = True
-            button.label = "กำลังพลครบแล้ว"
-            button.style = discord.ButtonStyle.grey
-            
+            button.label = "กองกำลังเต็มแล้ว"
             await interaction.response.edit_message(content="🎯 **ภารกิจระดมพลเสร็จสิ้น!**", embed=embed, view=self)
-            # แจ้งเตือนแม่ทัพ
-            await interaction.followup.send(f"📢 แจ้งท่านแม่ทัพ {self.author.mention}! ขณะนี้กองกำลังครบ **{self.target_count}** นาย พร้อมออกศึกแล้ว!")
+            await interaction.followup.send(f"📢 ท่านแม่ทัพ {self.author.mention}! กองกำลังครบจำนวนแล้ว!")
         else:
-            # ถ้ายังไม่ครบ: อัปเดต Embed ปกติ
             await interaction.response.edit_message(embed=embed, view=self)
 
-# ============ SLASH COMMANDS ============
-@bot.tree.command(name="ระดมพล", description="เรียกเหล่านักรบมารวมตัวกันด้วยชื่อ")
-@app_commands.describe(จำนวนคน="จำนวนคนที่ต้องการระดมพล")
+# ============ COMMANDS ============
+@bot.tree.command(name="ระดมพล", description="เรียกเหล่านักรบมารวมตัวกัน")
 async def recruit_army(interaction: discord.Interaction, จำนวนคน: int):
-    if จำนวนคน <= 1:
-        await interaction.response.send_message("การระดมพลต้องมีอย่างน้อย 2 นายขึ้นไป!", ephemeral=True)
-        return
-
+    if จำนวนคน < 2:
+        return await interaction.response.send_message("ต้องระดมพลอย่างน้อย 2 คน!", ephemeral=True)
+    
+    view = RecruitView(จำนวนคน, interaction.user)
     embed = discord.Embed(
         title="⚔️ การระดมพลอัศวิน",
-        description=f"ท่าน **{interaction.user.mention}** กำลังรวบรวมกองกำลังจำนวน **{จำนวนคน}** นาย!\n\n*(กดปุ่มด้านล่างเพื่อรายงานตัว)*",
+        description=f"ท่าน {interaction.user.mention} กำลังรวมกองกำลัง **{จำนวนคน}** นาย!",
         color=discord.Color.gold()
     )
-    
-    view = RecruitView(target_count=จำนวนคน, author=interaction.user)
     await interaction.response.send_message(embed=embed, view=view)
 
-@bot.tree.command(name='ข่าว', description="แสดงข่าวประจำวัน")
-async def manual_news(interaction: discord.Interaction): 
-    try:
-        await interaction.response.defer() 
-        articles = await fetch_news(max_articles=5)
-        
-        if articles:
-            await send_news_to_discord(articles)
-            await interaction.followup.send("✅ ส่งข่าวสำเร็จ!")
-        else:
-            await interaction.followup.send("❌ ไม่พบข่าวใหม่")
-    except Exception as e:
-        await interaction.followup.send(f"❌ เกิดข้อผิดพลาด: {e}")
-
-# ============ SYSTEM ============
 @bot.event
 async def on_ready():
-    for command in bot.tree.get_commands():
-        print(f"พบคำสั่ง: {command.name}")
+    logger.info(f"Logged in as {bot.user}")
     try:
-        synced = await bot.tree.sync()
-        print(f"\n✅ Sync สำเร็จ! ทั้งหมด {len(synced)} คำสั่ง")
-        print(f"🤖 {bot.user} พร้อมรับใช้ราชวัง!")
-        
-        # เริ่มการส่งข่าวประจำวัน
+        # Sync เฉพาะตอนเปิดเครื่อง (แนะนำให้ใช้คำสั่ง Sync แยกในโปรเจกต์ใหญ่)
+        await bot.tree.sync()
         if not send_daily_news.is_running():
             send_daily_news.start()
-            logger.info("✅ เริ่มตัวจับเวลาส่งข่าวประจำวันสำเร็จ")
     except Exception as e:
-        print(f"❌ Sync Error: {e}")
+        logger.error(f"Sync error: {e}")
 
 @bot.event
 async def on_member_join(member):
     channel = bot.get_channel(CHANNEL_W)
-    text = f"ยินดีต้อนรับสู่ ปาร์ตี้วังหลวง, {member.mention} ! ไทเฮาหอมกำลังรอ {member.mention} อยู่"
-    await  channel.send(text)
+    if channel:
+        await channel.send(f"ยินดีต้อนรับสู่ปาร์ตี้วังหลวง {member.mention}! ไทเฮาหอมกำลังรอท่านอยู่ 🍵")
 
 server_on()
 bot.run(os.getenv("TOKEN"))
