@@ -9,6 +9,7 @@ from datetime import datetime, time
 import pytz
 import logging
 import re
+import random
 
 # ตั้งค่า logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,8 +19,8 @@ tz = pytz.timezone('Asia/Bangkok')
 
 # 1. กำหนดเวลาส่งข่าว
 times = [
-    time(hour=6, minute=0, tzinfo=tz),
-    time(hour=16, minute=0, tzinfo=tz)
+    time(hour=6, minute=30),
+    time(hour=16, minute=30)
 ]
 
 intents = discord.Intents.default()
@@ -66,7 +67,8 @@ async def fetch_news(max_articles=5):
                     all_articles.append(article)
         except Exception as e:
             logger.error(f"❌ Error fetching from {source['name']}: {e}")
-    
+            
+    random.shuffle(all_articles)
     return all_articles[:max_articles]
 
 async def send_news_to_discord(articles):
@@ -104,9 +106,18 @@ async def send_news_to_discord(articles):
 
 @tasks.loop(time=times)
 async def send_daily_news():
-    articles = await fetch_news(5)
+    # เช็คเวลาปัจจุบันใน Log 
+    now_th = datetime.now(tz)
+    logger.info(f"Task เริ่มทำงานอัตโนมัติ ณ เวลาไทย: {now_th.strftime('%H:%M')}")
+    
+    articles = await fetch_news(max_articles=5)
+    
     if articles:
-        await send_news_to_discord(articles)
+        success = await send_news_to_discord(articles)
+        if success:
+            logger.info("ส่งข่าวตามเวลารอบปัจจุบันสำเร็จ")
+    else:
+        logger.info("ถึงเวลาส่งข่าว แต่ไม่มีข่าวใหม่ (อาจจะถูกส่งไปแล้วด้วยคำสั่งมือ)")
 
 # ============ UI: RECRUIT SYSTEM ============
 class RecruitView(discord.ui.View):
@@ -165,11 +176,6 @@ async def manual_news(interaction: discord.Interaction):
         if articles:
             # 3. ส่งข่าวไปยัง Channel ที่ตั้งค่าไว้ (หรือจะส่งกลับที่ช่องเดิมก็ได้)
             success = await send_news_to_discord(articles)
-            
-            if success:
-                await interaction.followup.send("✅ รายงานตัวครับ! ส่งข่าวล่าสุดเข้าห้องประกาศเรียบร้อยแล้ว")
-            else:
-                await interaction.followup.send("❌ เกิดปัญหาในการส่งข่าว ลองตรวจสอบ Channel ID ดูครับ")
         else:
             await interaction.followup.send("ℹ️ ตอนนี้ยังไม่มีข่าวใหม่ๆ เข้ามาเลยครับ ท่านเจ้าเมือง")
             
@@ -187,6 +193,7 @@ async def on_ready():
         if not send_daily_news.is_running():
             send_daily_news.start()
     except Exception as e:
+        send_daily_news.restart()
         logger.error(f"Sync error: {e}")
 
 @bot.event
