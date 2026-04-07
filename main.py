@@ -203,7 +203,13 @@ async def on_ready():
 async def on_member_join(member):
     channel = bot.get_channel(CHANNEL_W)
     if channel:
-        await channel.send(f"ยินดีต้อนรับสู่ปาร์ตี้วังหลวง {member.mention}! ไทเฮาหอมกำลังรอท่านอยู่ 🍵")
-
+        embed = discord.Embed(
+            title="🏮 ยินดีต้อนรับสู่พระราชวัง!",
+            description=f"ยินดีต้อนรับท่าน {member.mention} เข้าสู่ {member.guild.name}\nขอให้ท่านสำราญใจในวังหลวงแห่งนี้",
+            color=0xffd700 # สีทอง
+        )
+        embed.set_thumbnail(url=member.avatar.url if member.avatar else None)
+        embed.set_footer(text=f"ท่านคือข้าราชบริวารคนที่ {member.guild.member_count}")
+        await channel.send(embed=embed)
 server_on()
 bot.run(os.getenv("TOKEN"))
