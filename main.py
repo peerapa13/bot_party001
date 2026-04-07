@@ -5,7 +5,8 @@ import os
 from MSV import server_on
 import feedparser
 import asyncio
-from datetime import datetime
+from datetime import datetime, time, timedelta 
+import pytz
 import logging
 import re
 # ตั้งค่า logging
@@ -14,6 +15,15 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# กำหนดโซนเวลาไทย (ป้องกันปัญหาเวลา Server ไม่ตรงกับไทย)
+tz = pytz.timezone('Asia/Bangkok')
+
+# 1. กำหนดเวลาที่ต้องการส่งข่าว (6 โมงเช้า และ 4 โมงเย็น)
+times = [
+    time(hour=6, minute=0, tzinfo=tz),
+    time(hour=16, minute=0, tzinfo=tz)
+]
  
 # ตั้งค่า Discord Bot
 intents = discord.Intents.default()
@@ -123,7 +133,7 @@ async def send_news_to_discord(articles):
         for i, batch in enumerate(chunks):
             if i == 0:
                 # ส่ง message ตัวแรกพร้อมชื่อเรื่อง
-                message_text = f"📰 **ข่าวประจำวัน {datetime.now().strftime('%d/%m/%Y')} เวลา %H:%M น.**"
+                message_text = f"📰 **ข่าวประจำวัน {datetime.now().strftime('%d/%m/%Y')} เวลา %H : %M น.**"
                 await channel.send(message_text, embeds=batch)
             else:
                 await channel.send(embeds=batch)
@@ -135,41 +145,25 @@ async def send_news_to_discord(articles):
         logger.error(f"❌ เกิดข้อผิดพลาดในการส่งข่าวไปยัง Discord: {e}")
         return False
  
-@tasks.loop(hours=24)
+@tasks.loop(time=times) 
 async def send_daily_news():
-    """ส่งข่าวทุกวันเวลา 6 โมงเช้า"""
+    """ส่งข่าวตามเวลาที่กำหนด (06:00 และ 16:00)"""
     try:
-        logger.info("⏰ เริ่มการดึงและส่งข่าวประจำวัน...")
+        now = datetime.now(tz)
+        logger.info(f"⏰ ถึงเวลาส่งข่าวแล้ว ({now.strftime('%H:%M')}) กำลังดึงข่าว...")
+        
         articles = await fetch_news(max_articles=5)
         
         if articles:
             success = await send_news_to_discord(articles)
             if success:
-                logger.info("✅ ส่งข่าวประจำวันสำเร็จ")
+                logger.info(f"✅ ส่งข่าวรอบ {now.hour}:00 สำเร็จ")
         else:
-            logger.warning("⚠️ ไม่พบข่าวใหม่")
+            logger.info("ℹ️ ไม่มีข่าวใหม่ในช่วงเวลานี้")
+            
     except Exception as e:
-        logger.error(f"❌ เกิดข้อผิดพลาดในการส่งข่าวประจำวัน: {e}")
+        logger.error(f"❌ เกิดข้อผิดพลาดใน Task ส่งข่าว: {e}")
  
-@send_daily_news.before_loop
-async def before_send_news():
-    """รอให้บอท ready และคำนวณเวลารอจนถึง 6 โมงเช้า"""
-    await bot.wait_until_ready()
-    
-    now = datetime.now()
-    target_time = now.replace(hour=6, minute=0, second=0, microsecond=0)
-    
-    # ถ้าเวลาผ่าน 6 โมงแล้ว ให้รอจนถึงวันพรุ่งนี้
-    if now >= target_time:
-        from datetime import timedelta
-        target_time += timedelta(days=1)
-    
-    wait_seconds = (target_time - now).total_seconds()
-    
-    logger.info(f"⏳ รอจนถึง {target_time.strftime('%H:%M:%S')} ({int(wait_seconds)} วินาที)")
-    await asyncio.sleep(wait_seconds)
- 
-
 # ============ UI COMPONENTS ============
 class RecruitView(discord.ui.View):
     def __init__(self, target_count, author):
@@ -246,6 +240,8 @@ async def manual_news(interaction: discord.Interaction):
 # ============ SYSTEM ============
 @bot.event
 async def on_ready():
+    for command in bot.tree.get_commands():
+        print(f"พบคำสั่ง: {command.name}")
     try:
         synced = await bot.tree.sync()
         print(f"\n✅ Sync สำเร็จ! ทั้งหมด {len(synced)} คำสั่ง")
