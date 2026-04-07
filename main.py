@@ -178,6 +178,7 @@ async def manual_news(interaction: discord.Interaction):
         if articles:
             # 3. ส่งข่าวไปยัง Channel ที่ตั้งค่าไว้ (หรือจะส่งกลับที่ช่องเดิมก็ได้)
             success = await send_news_to_discord(articles)
+            await interaction.followup.send("ข้าไปสืบข่าวมาแปะที่กระดานให้เจ้าแล้ว!")
         else:
             await interaction.followup.send("ℹ️ ตอนนี้ยังไม่มีข่าวใหม่ๆ เข้ามาเลยครับ ท่านเจ้าเมือง")
             
