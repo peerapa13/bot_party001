@@ -27,24 +27,20 @@ CHANNEL_W = int(os.getenv("CHANNEL_W", 0))
 # แหล่งข่าว
 NEWS_SOURCES = [
     {
-        "url": "https://feeds.bloomberg.com/markets/news.rss",
-        "name": "Bloomberg News"
+        "url": "https://www.thairath.co.th/rss/news",
+        "name": "thairath"
     },
     {
-        "url": "https://feeds.reuters.com/reuters/businessNews",
-        "name": "Reuters Business"
+        "url": "https://www.techtalkthai.com/feed/",
+        "name": "TechTalkThai"
     },
     {
-        "url": "https://feeds.arstechnica.com/arstechnica/index",
-        "name": "Ars Technica"
+        "url": "https://www.matichon.co.th/feed",
+        "name": "มติชน"
     },
     {
-        "url": "https://feeds.techcrunch.com/",
-        "name": "TechCrunch"
-    },
-    {
-        "url": "https://feeds.bbci.co.uk/news/rss.xml",
-        "name": "BBC News"
+        "url": "https://www.bbc.com/thai/index.xml",
+        "name": "BBC"
     },
 ]
 # ตัวแปรเก็บข่าวที่ส่งไปแล้ว
