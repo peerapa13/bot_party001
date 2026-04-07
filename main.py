@@ -153,6 +153,31 @@ async def recruit_army(interaction: discord.Interaction, จำนวนคน: 
     )
     await interaction.response.send_message(embed=embed, view=view)
 
+@bot.tree.command(name='ข่าว', description="ดึงข่าวสารล่าสุดมาแสดงทันที")
+async def manual_news(interaction: discord.Interaction): 
+    try:
+        # 1. แจ้ง Discord ว่ากำลังประมวลผล (ป้องกัน Error: Interaction Responded)
+        await interaction.response.defer() 
+        
+        # 2. ดึงข่าวใหม่ (กำหนดให้ดึง 5 ข่าวล่าสุด)
+        articles = await fetch_news(max_articles=5)
+        
+        if articles:
+            # 3. ส่งข่าวไปยัง Channel ที่ตั้งค่าไว้ (หรือจะส่งกลับที่ช่องเดิมก็ได้)
+            success = await send_news_to_discord(articles)
+            
+            if success:
+                await interaction.followup.send("✅ รายงานตัวครับ! ส่งข่าวล่าสุดเข้าห้องประกาศเรียบร้อยแล้ว")
+            else:
+                await interaction.followup.send("❌ เกิดปัญหาในการส่งข่าว ลองตรวจสอบ Channel ID ดูครับ")
+        else:
+            await interaction.followup.send("ℹ️ ตอนนี้ยังไม่มีข่าวใหม่ๆ เข้ามาเลยครับ ท่านเจ้าเมือง")
+            
+    except Exception as e:
+        logger.error(f"Error in manual_news: {e}")
+        await interaction.followup.send(f"❌ เกิดข้อผิดพลาด: {e}")
+        
+
 @bot.event
 async def on_ready():
     logger.info(f"Logged in as {bot.user}")
