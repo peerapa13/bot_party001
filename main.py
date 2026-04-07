@@ -7,6 +7,7 @@ import feedparser
 import asyncio
 from datetime import datetime
 import logging
+import re
 # ตั้งค่า logging
 logging.basicConfig(
     level=logging.INFO,
@@ -106,7 +107,7 @@ async def send_news_to_discord(articles):
                 summary = summary[:397] + "..."
             
             # ลบแท็ก HTML ออก (ถ้ามี)
-            summary = summary.replace('<[^<]+?>', '')
+            summary = re.sub(r'<[^>]+>', '', summary)
             
             embed = discord.Embed(
                 title=f"📰 {title}",
@@ -232,21 +233,19 @@ async def recruit_army(interaction: discord.Interaction, จำนวนคน: 
     view = RecruitView(target_count=จำนวนคน, author=interaction.user)
     await interaction.response.send_message(embed=embed, view=view)
 
-@bot.command(name='ข่าว')
-async def manual_news(ctx):
-    """คำสั่ง /ข่าว เพื่อดึงข่าวด้วยตนเอง"""
+@bot.tree.command(name='ข่าว', description="แสดงข่าวประจำวัน")
+async def manual_news(interaction: discord.Interaction): 
     try:
-        # แสดงการโหลด
-        loading_msg = await ctx.send("⏳ กำลังดึงข่าว... (อาจใช้เวลาสักครู่)")
+        await interaction.response.defer() 
         articles = await fetch_news(max_articles=5)
         
         if articles:
             await send_news_to_discord(articles)
-            await loading_msg.edit(content="✅ ส่งข่าวสำเร็จ!")
+            await interaction.followup.send("✅ ส่งข่าวสำเร็จ!")
         else:
-            await loading_msg.edit(content="❌ ไม่พบข่าวใหม่")
+            await interaction.followup.send("❌ ไม่พบข่าวใหม่")
     except Exception as e:
-        await ctx.send(f"❌ เกิดข้อผิดพลาด: {e}")
+        await interaction.followup.send(f"❌ เกิดข้อผิดพลาด: {e}")
 
 # ============ SYSTEM ============
 @bot.event
