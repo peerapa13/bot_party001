@@ -45,8 +45,9 @@ async def fetch_news(max_articles=5):
     for source in NEWS_SOURCES:
         try:
             feed = feedparser.parse(source['url'])
+            count = 0
             for entry in feed.entries:
-                # พยายามหา URL รูปภาพจาก feed
+                if count >= 2: break
                 image_url = None
                 if 'media_content' in entry:
                     image_url = entry.media_content[0]['url']
@@ -65,6 +66,7 @@ async def fetch_news(max_articles=5):
                 
                 if article['link'] and article['link'] not in sent_articles:
                     all_articles.append(article)
+                    count += 1
         except Exception as e:
             logger.error(f"❌ Error fetching from {source['name']}: {e}")
             
