@@ -19,8 +19,8 @@ tz = pytz.timezone('Asia/Bangkok')
 
 # 1. กำหนดเวลาส่งข่าว
 times = [
-    time(hour=6, minute=30),
-    time(hour=16, minute=30)
+    time(hour=23, minute=30),
+    time(hour=9, minute=30)
 ]
 
 intents = discord.Intents.default()
